@@ -1,65 +1,755 @@
-import Image from "next/image";
+"use client";
+
+import {
+  useEffect,
+  useState,
+} from "react";
+
+import { trials }
+from "@/lib/trials";
+
+import {
+  trackEvent,
+} from "@/lib/telemetry";
+
+import {
+  createParticipant,
+} from "@/lib/session";
+
+import {
+  saveParticipant,
+  saveResponse,
+} from "@/lib/database";
+
+import {
+  ExperimentPhase,
+} from "@/types/experiment";
+
+import {
+  Participant,
+} from "@/types/participant";
+
+import InstructionScreen
+from "@/components/InstructionScreen";
+
+import ConsentScreen
+from "@/components/ConsentScreen";
+
+import ParticipantForm
+from "@/components/ParticipantForm";
+
+import CalibrationScreen
+from "@/components/CalibrationScreen";
+
+import FixationScreen
+from "@/components/FixationScreen";
+
+import StimulusScreen
+from "@/components/StimulusScreen";
+
+import ResponseScreen
+from "@/components/ResponseScreen";
+
+import FinishedScreen
+from "@/components/FinishedScreen";
+
+import {
+  useExperiment,
+} from "@/hooks/useExperiment";
+
+import {
+  useTelemetry,
+} from "@/hooks/useTelemetry";
+
+import {
+  useWebGazer,
+} from "@/hooks/useWebGazer";
 
 export default function Home() {
+
+  // =========================
+  // STATE
+  // =========================
+
+  const [phase, setPhase] =
+    useState<ExperimentPhase>(
+      "landing"
+    );
+
+  const [trialIndex, setTrialIndex] =
+    useState(0);
+
+  const [response, setResponse] =
+    useState("");
+
+  const [participant, setParticipant] =
+    useState<Participant | null>(
+      null
+    );
+
+  const [
+    teacherType,
+    setTeacherType,
+  ] = useState<
+    "pre-service" |
+    "in-service"
+  >(
+    "pre-service"
+  );
+
+  const [
+    yearsExperience,
+    setYearsExperience,
+  ] = useState("");
+
+  const [
+    imageBounds,
+    setImageBounds,
+  ] = useState<DOMRect | null>(
+    null
+  );
+
+  const [
+    calibrationIndex,
+    setCalibrationIndex,
+  ] = useState(0);
+
+  const [
+    calibrationClicks,
+    setCalibrationClicks,
+  ] = useState(0);
+
+  const { logTelemetry } =
+    useTelemetry();
+
+  const currentTrial =
+    trials[trialIndex];
+
+    const [name, setName] =
+  useState("");
+
+const [email, setEmail] =
+  useState("");
+
+const [phone, setPhone] =
+  useState("");
+
+const [
+  consented,
+  setConsented
+] = useState(false);
+
+  // =========================
+  // CALIBRATION POINTS
+  // =========================
+
+  const calibrationPoints = [
+
+    { x: 10, y: 10 },
+    { x: 50, y: 10 },
+    { x: 90, y: 10 },
+
+    { x: 10, y: 50 },
+    { x: 50, y: 50 },
+    { x: 90, y: 50 },
+
+    { x: 10, y: 90 },
+    { x: 50, y: 90 },
+    { x: 90, y: 90 },
+
+    { x: 50, y: 50 },
+  ];
+
+  // =========================
+  // START EXPERIMENT
+  // =========================
+
+  const startExperiment =
+    (
+      group:
+        | "pre-service"
+        | "in-service"
+    ) => {
+
+      const participantData =
+        createParticipant(
+          group
+        );
+
+      setParticipant(
+        participantData
+      );
+
+      saveParticipant({
+
+  id:
+    participantData.id,
+
+  group:
+    participantData.group,
+
+  name,
+
+  email,
+
+  phone,
+
+  yearsExperience,
+
+  consented,
+
+  consentTimestamp:
+    new Date()
+      .toISOString(),
+});
+
+      trackEvent({
+
+        participantId:
+          participantData.id,
+
+        timestamp:
+          performance.now(),
+
+        trialId: 0,
+
+        phase:
+          "participant",
+
+        type:
+          "participant_created",
+
+        metadata: {
+          group,
+          yearsExperience,
+        },
+      });
+
+      setPhase(
+        "calibration"
+      );
+    };
+
+  // =========================
+  // PHASE TRACKING
+  // =========================
+
+  useEffect(() => {
+
+    trackEvent({
+
+      participantId:
+        participant?.id,
+
+      timestamp:
+        performance.now(),
+
+      trialId:
+        currentTrial?.id,
+
+      phase,
+
+      type:
+        "phase_enter",
+    });
+
+  }, [
+    phase,
+    currentTrial,
+    participant,
+  ]);
+
+  // =========================
+  // WEBGAZER
+  // =========================
+
+  useWebGazer({
+
+    enabled:
+      phase ===
+        "calibration" ||
+      phase ===
+        "stimulus",
+
+    participantId:
+      participant?.id,
+
+    trialId:
+      currentTrial?.id,
+
+    imageBounds,
+  });
+
+  // =========================
+  // EXPERIMENT TIMING
+  // =========================
+
+  useExperiment({
+    phase,
+    currentTrial,
+    setPhase,
+  });
+
+  // =========================
+  // SELF-PACED KEYBOARD
+  // =========================
+
+  useEffect(() => {
+
+    if (
+      phase !== "stimulus" ||
+      !currentTrial.selfPaced
+    ) return;
+
+    const handleKeyDown =
+      (
+        event: KeyboardEvent
+      ) => {
+
+        if (
+          event.code ===
+            "Space" ||
+          event.code ===
+            "Enter"
+        ) {
+
+          trackEvent({
+
+            participantId:
+              participant?.id,
+
+            timestamp:
+              performance.now(),
+
+            trialId:
+              currentTrial.id,
+
+            phase:
+              "stimulus",
+
+            type:
+              "key_pressed",
+
+            metadata: {
+              key:
+                event.code,
+            },
+          });
+
+          setPhase(
+            "response"
+          );
+        }
+      };
+
+    window.addEventListener(
+      "keydown",
+      handleKeyDown
+    );
+
+    return () => {
+
+      window.removeEventListener(
+        "keydown",
+        handleKeyDown
+      );
+    };
+
+  }, [
+    phase,
+    currentTrial,
+    participant,
+  ]);
+
+  // =========================
+  // WINDOW FOCUS
+  // =========================
+
+  useEffect(() => {
+
+    if (!participant)
+      return;
+
+    const handleBlur =
+      () => {
+
+        trackEvent({
+
+          participantId:
+            participant.id,
+
+          timestamp:
+            performance.now(),
+
+          trialId:
+            currentTrial.id,
+
+          phase,
+
+          type:
+            "window_blur",
+        });
+      };
+
+    const handleFocus =
+      () => {
+
+        trackEvent({
+
+          participantId:
+            participant.id,
+
+          timestamp:
+            performance.now(),
+
+          trialId:
+            currentTrial.id,
+
+          phase,
+
+          type:
+            "window_focus",
+        });
+      };
+
+    window.addEventListener(
+      "blur",
+      handleBlur
+    );
+
+    window.addEventListener(
+      "focus",
+      handleFocus
+    );
+
+    return () => {
+
+      window.removeEventListener(
+        "blur",
+        handleBlur
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleFocus
+      );
+    };
+
+  }, [
+    participant,
+    currentTrial,
+    phase,
+  ]);
+
+  // =========================
+  // CALIBRATION
+  // =========================
+
+  const handleCalibrationClick =
+    () => {
+
+      const nextClicks =
+        calibrationClicks + 1;
+
+      setCalibrationClicks(
+        nextClicks
+      );
+
+      if (
+        nextClicks >= 5
+      ) {
+
+        setCalibrationClicks(
+          0
+        );
+
+        if (
+          calibrationIndex <
+          calibrationPoints.length - 1
+        ) {
+
+          setCalibrationIndex(
+            calibrationIndex + 1
+          );
+
+        } else {
+
+          if (
+            window.webgazer
+          ) {
+
+            window.webgazer
+              .removeMouseEventListeners();
+          }
+
+          setPhase(
+            "fixation"
+          );
+        }
+      }
+    };
+
+  // =========================
+  // RESPONSE SUBMISSION
+  // =========================
+
+  const submitResponse =
+    () => {
+
+      trackEvent({
+
+        participantId:
+          participant?.id,
+
+        timestamp:
+          performance.now(),
+
+        trialId:
+          currentTrial.id,
+
+        phase:
+          "response",
+
+        type:
+          "response_submitted",
+
+        metadata: {
+          response,
+        },
+      });
+
+      saveResponse({
+
+        participantId:
+          participant?.id,
+
+        trialId:
+          currentTrial.id,
+
+        responseText:
+          response,
+      });
+
+      setResponse("");
+
+      if (
+        trialIndex <
+        trials.length - 1
+      ) {
+
+        setTrialIndex(
+          trialIndex + 1
+        );
+
+        setPhase(
+          "fixation"
+        );
+
+      } else {
+
+        setPhase(
+          "finished"
+        );
+      }
+    };
+
+  // =========================
+  // UI
+  // =========================
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+
+    <main
+      className="
+        flex
+        min-h-screen
+        items-center
+        justify-center
+        p-10
+        bg-white
+      "
+    >
+
+      {/* LANDING */}
+
+      {phase ===
+        "landing" && (
+
+        <InstructionScreen
+
+          onSelect={() => {
+
+            setPhase(
+              "consent"
+            );
+          }}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      )}
+
+      {/* CONSENT */}
+
+      {phase ===
+        "consent" && (
+
+        <ConsentScreen
+
+  consented={consented}
+
+  onConsentChange={
+    setConsented
+  }
+
+  onContinue={() => {
+
+    setPhase(
+      "participant"
+    );
+  }}
+/>
+      )}
+
+      {/* PARTICIPANT */}
+
+      {phase ===
+        "participant" && (
+
+        <ParticipantForm
+
+        name={name}
+email={email}
+phone={phone}
+
+onNameChange={setName}
+onEmailChange={setEmail}
+onPhoneChange={setPhone}  
+        
+        
+        
+        teacherType={
+            teacherType
+          }
+
+          yearsExperience={
+            yearsExperience
+          }
+
+          onTeacherTypeChange={
+            setTeacherType
+          }
+
+          onYearsExperienceChange={
+            setYearsExperience
+          }
+
+          onContinue={() => {
+
+            startExperiment(
+              teacherType
+            );
+          }}
+        />
+      )}
+
+      {/* CALIBRATION */}
+
+      {phase ===
+        "calibration" && (
+
+        <CalibrationScreen
+
+          point={
+            calibrationPoints[
+              calibrationIndex
+            ]
+          }
+
+          clicks={
+            calibrationClicks
+          }
+
+          onClick={
+            handleCalibrationClick
+          }
+        />
+      )}
+
+      {/* FIXATION */}
+
+      {phase ===
+        "fixation" && (
+
+        <FixationScreen />
+      )}
+
+      {/* STIMULUS */}
+
+      {phase ===
+        "stimulus" && (
+
+        <StimulusScreen
+
+          image={
+            currentTrial.image
+          }
+
+          showNextButton={
+            currentTrial.selfPaced
+          }
+
+          onImageBounds={
+            setImageBounds
+          }
+        />
+      )}
+
+      {/* RESPONSE */}
+
+      {phase ===
+        "response" && (
+
+        <ResponseScreen
+
+          response={response}
+
+          onChange={
+            setResponse
+          }
+
+          onSubmit={() => {
+
+            logTelemetry({
+
+              participantId:
+                participant?.id,
+
+              trialId:
+                currentTrial.id,
+
+              phase:
+                "response",
+
+              type:
+                "button_clicked",
+
+              metadata: {
+                button:
+                  "submit_response",
+              },
+            });
+
+            submitResponse();
+          }}
+        />
+      )}
+
+      {/* FINISHED */}
+
+      {phase ===
+        "finished" && (
+
+        <FinishedScreen />
+      )}
+
+    </main>
   );
 }

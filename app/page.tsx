@@ -148,7 +148,6 @@ const [
 
   const calibrationPoints = [
 
-    { x: 10, y: 10 },
     { x: 50, y: 10 },
     { x: 90, y: 10 },
 
